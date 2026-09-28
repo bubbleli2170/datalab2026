@@ -19,7 +19,7 @@
  * Difficulty: 1
  */
 int bitAnd(int x, int y) {
-    return 2;
+    return ~(~x | ~y);
 }
 
 /*
@@ -30,7 +30,7 @@ int bitAnd(int x, int y) {
  *   Difficulty: 1
  */
 int bitXor(int x, int y) {
-    return 2;
+    return ~(x & y) & ~(~x & ~y);
 }
 
 /*
@@ -50,7 +50,10 @@ int bitXor(int x, int y) {
  *   1 if x and y have the same sign , 0 otherwise.
  */
 int samesign(int x, int y) {
-    return 2;
+    //0特殊处理
+    if(!x && !y) return 1;
+    if(x && y) return !((x ^ y) >> 31);
+    return 0;
 }
 
 /*
@@ -63,7 +66,26 @@ int samesign(int x, int y) {
  *   Difficulty: 4
  */
 int logtwo(int v) {
-    return 2;
+    int result;
+    int shift;
+
+    //二分查找找首一
+    result = (v > 0xFFFF) << 4;
+    v >>= result;
+
+    shift = (v > 0xFF) << 3;
+    v >>= shift;
+    result |= shift;
+
+    shift = (v > 0xF) << 2;
+    v >>= shift;
+    result |= shift;
+
+    shift = (v > 0x3) << 1;
+    v >>= shift;
+    result |= shift;
+
+    return result | (v >> 1);
 }
 
 /*
@@ -76,7 +98,10 @@ int logtwo(int v) {
  *    Difficulty: 2
  */
 int byteSwap(int x, int n, int m) {
-    return 2;
+    int loc_n = n << 3;
+    int loc_m = m << 3;
+    int xor_byte = ((x >> loc_n) ^ (x >> loc_m)) & 0xFF;
+    return x ^ (xor_byte << loc_n) ^ (xor_byte << loc_m);
 }
 
 /*
@@ -88,7 +113,16 @@ int byteSwap(int x, int n, int m) {
  *   Difficulty: 3
  */
 unsigned reverse(unsigned v) {
-    return 2;
+    unsigned result = 0;
+    int count = 32;
+
+    while (count) {
+        result = (result << 1) | (v & 1);
+        v = v >> 1;
+        count = count - 1;
+    }
+
+    return result;
 }
 
 /*
@@ -100,7 +134,12 @@ unsigned reverse(unsigned v) {
  *   Difficulty: 3
  */
 int logicalShift(int x, int n) {
-    return 2;
+    // 特殊处理n为0的情况
+    int maskShift = n + ~0 + !n;
+    int zeroMask = ~0 + !(!n);
+    int mask = (0x7FFFFFFF >> maskShift) | zeroMask;
+
+    return (x >> n) & mask;
 }
 
 /*
@@ -112,7 +151,32 @@ int logicalShift(int x, int n) {
  *   Difficulty: 4
  */
 int leftBitCount(int x) {
-    return 2;
+    int value = ~x;
+    int count = 0;
+    int step;
+    int shift;
+
+    // 先将x取反，二分查找统计开头连续的0
+    step = (!(value >> 16)) << 4;
+    count = count | step;
+
+    shift = 24 + ~count + 1;
+    step = (!(value >> shift)) << 3;
+    count = count | step;
+
+    shift = 28 + ~count + 1;
+    step = (!(value >> shift)) << 2;
+    count = count | step;
+
+    shift = 30 + ~count + 1;
+    step = (!(value >> shift)) << 1;
+    count = count | step;
+
+    shift = 31 + ~count + 1;
+    step = !(value >> shift);
+    count = count | step;
+
+    return count + !value;
 }
 
 /*
@@ -124,7 +188,39 @@ int leftBitCount(int x) {
  *   Difficulty: 4
  */
 unsigned float_i2f(int x) {
-    return 2;
+    unsigned sign = 0;
+    unsigned value = x;
+    unsigned shiftLeft = 0;
+    unsigned afterShift;
+    unsigned delta;
+
+    if (!x) {
+        return 0;
+    }
+
+    if (x < 0) {
+        sign = 0x80000000;
+        value = ~value + 1;
+    }
+
+    afterShift = value;
+
+    while (!(afterShift & 0x80000000)) {
+        afterShift = afterShift << 1;
+        shiftLeft = shiftLeft + 1;
+    }
+
+    afterShift = afterShift << 1;
+    shiftLeft = shiftLeft + 1;
+
+    //向偶数舍入
+    delta = ((afterShift & 0x1FF)
+             + ((afterShift >> 9) & 1)) > 0x100;
+
+    return (sign
+            | (afterShift >> 9)
+            | ((159 - shiftLeft) << 23))
+           + delta;
 }
 
 /*
@@ -139,7 +235,29 @@ unsigned float_i2f(int x) {
  *   Difficulty: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned sign = uf & 0x80000000;
+    unsigned exponent = uf & 0x7F800000;
+    unsigned fraction = uf & 0x007FFFFF;
+
+    // NaNs或infinities
+    if (exponent == 0x7F800000) {
+        return uf;
+    }
+
+    //0或denormalized
+    if (exponent == 0) {
+        return sign | ((uf & 0x7FFFFFFF) << 1);
+    }
+
+    //Normalized
+    exponent = exponent + 0x00800000;
+
+    //overflow
+    if (exponent == 0x7F800000) {
+        fraction = 0;
+    }
+
+    return sign | exponent | fraction;
 }
 
 /*
@@ -156,7 +274,34 @@ unsigned floatScale2(unsigned uf) {
  *   Difficulty: 3
  */
 int float64_f2i(unsigned uf1, unsigned uf2) {
-    return 2;
+    unsigned sign = uf2 >> 31;
+    unsigned exponent = (uf2 >> 20) & 0x7FF;
+    unsigned mantissa;
+    int shift;
+    int result;
+
+    if (exponent < 1023) {
+        return 0;
+    }
+
+    if (exponent > 1053) {
+        return 0x80000000;
+    }
+
+    shift = 1054 - exponent;
+
+    // 补上隐藏的前导1并拼接小数部分的高位
+    mantissa = 0x80000000
+               | ((uf2 & 0xFFFFF) << 11)
+               | (uf1 >> 21);
+
+    result = mantissa >> shift;
+
+    if (sign) {
+        return -result;
+    }
+
+    return result;
 }
 
 /*
@@ -173,5 +318,17 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   Difficulty: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (x < -149) {
+        return 0;
+    }
+
+    if (x < -126) {
+        return 1 << (x + 149);
+    }
+
+    if (x > 127) {
+        return 0x7F800000;
+    }
+
+    return (x + 127) << 23;
 }
